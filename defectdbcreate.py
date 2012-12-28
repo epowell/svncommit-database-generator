@@ -1,8 +1,22 @@
 #!/usr/bin/python
 from svnparser import parseFile, Commit
 import sqlite3
+import logging
+from itertools import chain, ifilter
 
 excludedRevisions = ['r50360']
+
+def cleanDb(connection):
+    c = connection.cursor()
+    # Create tables
+    c.execute('''drop table if exists commits''')
+    c.execute('''drop table if exists paths''')
+    c.execute('''drop table if exists defects''')
+    c.execute('''drop table if exists commits_paths''')
+    c.execute('''drop table if exists commits_defects''')
+    # Save (commit) the changes
+    connection.commit()
+    c.close()
 
 def createTables(connection):
     c = connection.cursor()
@@ -11,7 +25,9 @@ def createTables(connection):
     (id integer primary key,
      date text,
      revision text,
-     message text)
+     message text,
+     UNIQUE (revision) ON CONFLICT REPLACE
+    )
     ''')
     c.execute('''create table if not exists paths
     (id integer primary key,
@@ -56,51 +72,52 @@ def insertAndGetId(connection, tablename, columnname, value=None):
     value = value.strip()
 
     c = connection.cursor()
-    c.execute('insert into %s values (NULL, ?)' % tablename, (value,))
-    c.execute('select id from %s where %s=?' % (tablename, columnname), (value,))
-    res = c.fetchone()
-    if not res:
+    try:
+        c.execute('insert into %s values (NULL, ?)' % tablename, (value,))
+        if not c.lastrowid: raise Exception('%s not found after insert' % columname)
+        return c.lastrowid
+    finally:
         c.close()
-        raise Exception('%s not found after insert!' % columname)
-    connection.commit()
-    c.close()
-    return res[0]
-    
+        
 def insertAndGetCommitId(connection, value=None):
     if not value:
         raise ValueError(value)
 
     c = connection.cursor()
-    c.execute('insert into commits values (NULL, ?, ?, ?)', (value.date, value.revision, value.message))
-    c.execute('select id from commits where revision=?', (value.revision,))
-    res = c.fetchone()
-    if not res:
-        c.close()
-        raise Exception('Commit not found after insert!')
-    connection.commit()
-    c.close()
-    return res[0]
-
-with sqlite3.connect('defectcommits.sqlite') as connection:
-    createTables(connection)
-
-    allcommits = parseFile('trunk_core_commits.log') + parseFile('trunk_ent_commits.log')
-    goodcommits = filter(lambda c: c.revision not in excludedRevisions, allcommits)
-    for commit in goodcommits:
-
-        commitId = insertAndGetCommitId(connection, commit)
-
-        pathIds = map(lambda x: insertAndGetPathId(connection, x), commit.paths)
-        defectIds = map(lambda x: insertAndGetDefectId(connection, x), commit.defects)
-
-        c = connection.cursor()
-        for pathId in pathIds:
-            c.execute('insert into commits_paths values (NULL, ?, ?)', (commitId, pathId))
-        for defectId in defectIds:
-            c.execute('insert into commits_defects values (NULL, ?, ?)', (commitId, defectId))
-        connection.commit()
+    try:
+        c.execute('insert into commits values (NULL, ?, ?, ?)', (value.date, value.revision, value.message))
+        if not c.lastrowid: raise Exception('%s not found after insert' % columname)
+        return c.lastrowid
+    finally:
         c.close()
 
-    print len(goodcommits)
+if __name__ == '__main__':
+    logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.INFO)
+    with sqlite3.connect('data/defectcommits.sqlite') as connection:
+        cleanDb(connection)
 
+        logging.info("Creating tables...")
+        createTables(connection)
+        
+        logging.info("Parsing files...")
+        allcommits = chain(parseFile('data/trunk_core_commits.log'), parseFile('data/trunk_ent_commits.log'))
+        goodcommits = filter(lambda c: c.revision not in excludedRevisions, allcommits)
+        
+        logging.info("Processing commits...")
+        for commit in goodcommits:
+
+            commitId = insertAndGetCommitId(connection, commit)
+
+            pathIds = map(lambda x: insertAndGetPathId(connection, x), commit.paths)
+            defectIds = map(lambda x: insertAndGetDefectId(connection, x), commit.defects)
+
+            c = connection.cursor()
+            for pathId in pathIds:
+                c.execute('insert into commits_paths values (NULL, ?, ?)', (commitId, pathId))
+            for defectId in defectIds:
+                c.execute('insert into commits_defects values (NULL, ?, ?)', (commitId, defectId))
+            connection.commit()
+            c.close()
+
+        logging.info("%d commits indexed", len(goodcommits))
 

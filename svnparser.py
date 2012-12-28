@@ -1,19 +1,21 @@
 #!/usr/bin/python
 import re
 import sys
+import logging
 from collections import namedtuple
+from itertools import chain
 
 #'------------------------------------------------------------------------'
 DASHLINE = '-'*72
 COMMIT_PATH_REGEX = re.compile(r'^(?P<operation>[MADR]) (?P<path>/[^\(]*)(?: \(from [^\)]*\))?')
-DEFECT_IDS_REGEX = re.compile(r'[^-_rvSALET/\[]{1,2}[0-9]{4,5}|(?:ZE[NM]|JIRA|FIXES)[-_]?[0-9]{1,4}', flags=re.I)
-
-printing = False
+TRAC_DEFECT_IDS_REGEX = re.compile(r'[^-_rvSALETFROC/\[\(\)]{1,2}(?P<id>[1-9][0-9]{3,4})', flags=re.I)
+JIRA_DEFECT_IDS_REGEX = re.compile(r'(?:ZE[NM]|JIRA|FIXES)[-_]?(?P<id>[0-9]{1,4})', flags=re.I)
 
 Commit = namedtuple('Commit', ['revision', 'date', 'message', 'paths', 'defects'])
 
 def extractDefectsFromMessage(message):
-    return DEFECT_IDS_REGEX.findall(message)
+    return [x.group('id') for x in chain(TRAC_DEFECT_IDS_REGEX.finditer(message), JIRA_DEFECT_IDS_REGEX.finditer(message))]
+    #return DEFECT_IDS_REGEX.findall(message)
 
 def parseCommit(rawcommit):
     """
@@ -53,13 +55,13 @@ def parseCommit(rawcommit):
 
 def isInterestingCommit(commit):
     if not commit:
-        #print "No commit passed"
+        logging.debug("No commit passed")
         return False
     if int(commit.revision[1:]) < 48193:
-        #print "Discarding commit %s - too early" % commit.revision
+        logging.debug("Discarding commit %s - too early", commit.revision)
         return False
     if len(commit.defects) == 0:
-        #print >> sys.stderr, "Discarding commit %s - no defects in '%s'" % (commit.revision, commit.message)
+        logging.debug("Discarding commit %s - no defects in '%s'", commit.revision, commit.message)
         return False
     return True
 
@@ -74,17 +76,15 @@ def parse(stream):
         rawcommits = rawcommits[1:]
     if not rawcommits[-1]:
         rawcommits = rawcommits[:-1]
-    if printing:
-        print >> sys.stderr, "Found %d commits" % len(rawcommits)
+    logging.info("Found %d commits", len(rawcommits))
     commits = filter(isInterestingCommit, map(parseCommit, rawcommits))
-    if printing:
-        print >> sys.stderr, "Found %d interesting commits" % len(commits)
+    logging.info("Found %d interesting commits", len(commits))
     return commits
 
 if __name__ == '__main__':
-    printing = True
+    logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.INFO)
     if len(sys.argv)<2:
-        print "Input SVN log required"
+        logging.error("Input SVN log required")
         exit(1)
     parseFile(sys.argv[1])
-        
+
