@@ -1,5 +1,6 @@
 #!/usr/bin/python
 from svnparser import parseFile, Commit
+from coverage_102312 import Coverage, getCoverage
 import sqlite3
 import logging
 from itertools import chain, ifilter
@@ -32,7 +33,9 @@ def createTables(connection):
     c.execute('''create table if not exists paths
     (id integer primary key,
      path text,
-     UNIQUE (path) ON CONFLICT REPLACE
+     lines integer default 0,
+     coverage integer default 0,
+     UNIQUE (path) ON CONFLICT IGNORE
     )''')
     c.execute('''create table if not exists defects
     (id integer primary key,
@@ -60,36 +63,44 @@ def createTables(connection):
     c.close()
 
 def insertAndGetPathId(connection, path=None):
-    return insertAndGetId(connection, 'paths', 'path', path)
+    pathcoverage = getCoverage(path)
+    if pathcoverage.lines == 0 and pathcoverage.coverage == 0 and '.' not in path:
+        #don't insert directories
+        return None
+
+    columndict = {
+        'path': path,
+        'lines': pathcoverage.lines,
+        'coverage': pathcoverage.coverage
+    }
+    return insertAndGetId(connection, 'paths', columndict)
 
 def insertAndGetDefectId(connection, defect=None):
     if defect: defect = defect.upper()
-    return insertAndGetId(connection, 'defects', 'defect', defect)
+    return insertAndGetId(connection, 'defects', {'defect': defect})
 
-def insertAndGetId(connection, tablename, columnname, value=None):
-    if not value:
-        raise ValueError(value)
-    value = value.strip()
-
+def insertAndGetId(connection, tablename, columndict={}):
     c = connection.cursor()
     try:
-        c.execute('insert into %s values (NULL, ?)' % tablename, (value,))
+        c.execute('insert into %s (id, %s) values (NULL, %s)' % (tablename, ', '.join(columndict.keys()), ', '.join('?'*len(columndict))), columndict.values())
         if not c.lastrowid: raise Exception('%s not found after insert' % columname)
         return c.lastrowid
+    except Exception as ex:
+        raise ex
     finally:
         c.close()
         
-def insertAndGetCommitId(connection, value=None):
-    if not value:
-        raise ValueError(value)
+def insertAndGetCommitId(connection, commit=None):
+    if not commit:
+        raise ValueError(commit)
 
-    c = connection.cursor()
-    try:
-        c.execute('insert into commits values (NULL, ?, ?, ?)', (value.date, value.revision, value.message))
-        if not c.lastrowid: raise Exception('%s not found after insert' % columname)
-        return c.lastrowid
-    finally:
-        c.close()
+    columndict = {
+        'date': commit.date or '',
+        'revision': commit.revision,
+        'message': commit.message or ''
+    }
+
+    return insertAndGetId(connection, 'commits', columndict)
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.INFO)
@@ -108,8 +119,8 @@ if __name__ == '__main__':
 
             commitId = insertAndGetCommitId(connection, commit)
 
-            pathIds = map(lambda x: insertAndGetPathId(connection, x), commit.paths)
-            defectIds = map(lambda x: insertAndGetDefectId(connection, x), commit.defects)
+            pathIds = filter(None, map(lambda x: insertAndGetPathId(connection, x), commit.paths))
+            defectIds = filter(None, map(lambda x: insertAndGetDefectId(connection, x), commit.defects))
 
             c = connection.cursor()
             for pathId in pathIds:
