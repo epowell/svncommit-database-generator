@@ -889,7 +889,7 @@ wcReplacements = (('/trunk', ''),
                   ('/enterprise/zenpacks', '/enterprise'))
 coverageReplacements = (('/trunk/core/Products', '/opt/zenoss/Products'),
                         ('/trunk/enterprise/zenpacks', '/home/epowell/src/4.2.x/enterprise'))
-wcIgnoredExtensions = ('txt', 'xml', 'zcml', 'conf')
+wcIgnoredExtensions = ('txt', 'xml', 'zcml', 'conf', 'pickle')
 
 def getLineCount(path):
     for ext in wcIgnoredExtensions:
