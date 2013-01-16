@@ -58,7 +58,7 @@ def isInterestingCommit(commit):
         logging.debug("No commit passed")
         return False
     if int(commit.revision[1:]) < 48193:
-        logging.debug("Discarding commit %s - too early", commit.revision)
+        #logging.debug("Discarding commit %s - too early", commit.revision)
         return False
     if len(commit.defects) == 0:
         logging.debug("Discarding commit %s - no defects in '%s'", commit.revision, commit.message)
@@ -82,7 +82,7 @@ def parse(stream):
     return commits
 
 if __name__ == '__main__':
-    logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.INFO)
+    logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.DEBUG)
     if len(sys.argv)<2:
         logging.error("Input SVN log required")
         exit(1)

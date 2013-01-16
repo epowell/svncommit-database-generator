@@ -6,6 +6,8 @@ import logging
 from itertools import chain, ifilter
 
 excludedRevisions = ['r50360']
+latestInsertedId = -1
+tableprimaries = {'commits': 'revision', 'paths': 'path', 'defects': 'defect'}
 
 def cleanDb(connection):
     c = connection.cursor()
@@ -27,7 +29,7 @@ def createTables(connection):
      date text,
      revision text,
      message text,
-     UNIQUE (revision) ON CONFLICT REPLACE
+     UNIQUE (revision) ON CONFLICT IGNORE
     )
     ''')
     c.execute('''create table if not exists paths
@@ -40,7 +42,7 @@ def createTables(connection):
     c.execute('''create table if not exists defects
     (id integer primary key,
      defect text,
-     UNIQUE (defect) ON CONFLICT REPLACE
+     UNIQUE (defect) ON CONFLICT IGNORE
     )''')
     c.execute('''create table if not exists commits_paths
     (id integer primary key,
@@ -48,7 +50,7 @@ def createTables(connection):
      pathid integer,
      FOREIGN KEY(commitid) REFERENCES commits(id),
      FOREIGN KEY(pathid) REFERENCES paths(id),
-     UNIQUE (commitid, pathid) ON CONFLICT REPLACE
+     UNIQUE (commitid, pathid) ON CONFLICT IGNORE
     )''')
     c.execute('''create table if not exists commits_defects
     (id integer primary key,
@@ -56,7 +58,7 @@ def createTables(connection):
      defectid integer,
      FOREIGN KEY(commitid) REFERENCES commits(id),
      FOREIGN KEY(defectid) REFERENCES defects(id),
-     UNIQUE (commitid, defectid) ON CONFLICT REPLACE
+     UNIQUE (commitid, defectid) ON CONFLICT IGNORE
     )''')
     # Save (commit) the changes
     connection.commit()
@@ -79,14 +81,17 @@ def insertAndGetDefectId(connection, defect=None):
     if defect: defect = defect.upper()
     return insertAndGetId(connection, 'defects', {'defect': defect})
 
+def getIdFromPrimaryColumn(cursor, tablename, columndict):
+    cursor.execute('select id from %s where %s = ?' % (tablename, tableprimaries[tablename]), (columndict[tableprimaries[tablename]],))
+    return cursor.fetchone()
+
 def insertAndGetId(connection, tablename, columndict={}):
     c = connection.cursor()
     try:
         c.execute('insert into %s (id, %s) values (NULL, %s)' % (tablename, ', '.join(columndict.keys()), ', '.join('?'*len(columndict))), columndict.values())
-        if not c.lastrowid: raise Exception('%s not found after insert' % columname)
-        return c.lastrowid
-    except Exception as ex:
-        raise ex
+        insertedId = getIdFromPrimaryColumn(c, tablename, columndict)
+        if not insertedId: raise Exception('%s not found after insert' % columdict)
+        return insertedId[0]
     finally:
         c.close()
         
@@ -116,6 +121,8 @@ if __name__ == '__main__':
         
         logging.info("Processing commits...")
         for commit in goodcommits:
+            #if commit.revision == 'r65357':
+            #    import pdb; pdb.set_trace()
 
             commitId = insertAndGetCommitId(connection, commit)
 
