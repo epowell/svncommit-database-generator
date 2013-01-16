@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
 
     #output in .csv
-    print '"' + '","'.join(('# of defects', 'path', 'defect IDs', 'lines', 'coverage', 'is file')) + '"'
+    print '"' + '","'.join(('# of defects', 'path', 'defect IDs', 'lines', 'covered lines', 'coverage', 'is file')) + '"'
     for key, value in sorted(defecttable.items(), key=lambda x: (len(x[1][0]), -len(x[0])), reverse=True):
         path = '/'.join(key)
         values = (
